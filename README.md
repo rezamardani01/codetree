@@ -12,7 +12,7 @@ Folders grow into branches, files bloom as leaves — sized by lines of code, co
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-8b949e)](#installation)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)](#why-codetree)
 
-<img src="docs/screenshot.png" alt="CodeTree showing the Python standard library as a radial tree" width="900">
+<img src="https://raw.githubusercontent.com/rezamardani01/codetree/main/docs/screenshot.png" alt="CodeTree showing the Python standard library as a radial tree" width="900">
 
 </div>
 
