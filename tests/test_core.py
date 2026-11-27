@@ -77,6 +77,30 @@ class ScanTests(unittest.TestCase):
         write(self.root, ".gitignore", "*.js\n")
         self.assertEqual(scan(self.root).total_files, 2)
 
+    def test_gitignore_negation(self):
+        write(self.root, ".gitignore", "*.log\n!keep.log\n")
+        write(self.root, "drop.log", "x\n")
+        write(self.root, "keep.log", "x\n")
+        names = sorted(f.name for f in scan(self.root).files)
+        self.assertIn("keep.log", names)
+        self.assertNotIn("drop.log", names)
+
+    def test_nested_gitignore(self):
+        write(self.root, "sub/.gitignore", "tmp\n")
+        write(self.root, "sub/tmp/x.txt", "x\n")
+        write(self.root, "tmp/y.txt", "x\n")
+        names = sorted(f.name for f in scan(self.root).files)
+        self.assertIn("y.txt", names)      # the sub/.gitignore rule must not leak to the root
+        self.assertNotIn("x.txt", names)   # ...but it must apply inside sub/
+
+    def test_anchored_gitignore(self):
+        write(self.root, ".gitignore", "/logs\n")
+        write(self.root, "logs/a.txt", "x\n")
+        write(self.root, "sub/logs/b.txt", "x\n")
+        names = [f.name for f in scan(self.root).files]
+        self.assertNotIn("a.txt", names)  # '/logs' anchors to the project root only
+        self.assertIn("b.txt", names)     # ...so sub/logs must survive
+
     def test_bom_first_line(self):
         write(self.root, "bom.py", "\ufeff# comment\nx = 1\n")
         names = {f.name: (f.code, f.comment) for f in scan(self.root).files}
