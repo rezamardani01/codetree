@@ -5,6 +5,7 @@ import unittest
 
 from codetree.cli import main
 from codetree.core import ScanOptions, classify_lines, detect_language, format_size, scan, to_csv, to_json
+from codetree.report import to_html
 
 
 def write(root, rel, text="", mode="w"):
@@ -112,16 +113,52 @@ class ScanTests(unittest.TestCase):
         self.assertEqual(json.loads(to_json(r))["summary"]["files"], 3)
         self.assertEqual(len(to_csv(r).strip().splitlines()), 4)
 
+    def test_html_report(self):
+        h = to_html(scan(self.root))
+        low = h.lower()
+        self.assertIn("<!doctype html", low)
+        self.assertIn("</html>", low)
+        self.assertIn("a.py", h)          # tree entry
+        self.assertIn("Python", h)        # language legend
+        self.assertIn("largest files", low)
+        self.assertIn('id="filter"', h)   # search box
+        self.assertIn('id="tree"', h)
+
+    def test_html_report_escapes_names(self):
+        write(self.root, "weird<&>.py", "x = 1\n")
+        h = to_html(scan(self.root))
+        self.assertIn("weird&lt;&amp;&gt;.py", h)
+        self.assertNotIn("weird<&>", h)
+
+    def test_html_report_empty_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = to_html(scan(d))
+            self.assertIn("No files counted", h)
+
     def test_cancel(self):
         self.assertTrue(scan(self.root, cancel=lambda: True).cancelled)
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        write(self.root, "a.py", "x = 1\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
     def test_negative_options_rejected(self):
         for flag in ("--top", "--depth", "--max-size"):
             with self.assertRaises(SystemExit, msg=flag) as cm:
                 main([flag, "-1", "."])
             self.assertEqual(cm.exception.code, 2)
+
+    def test_html_export(self):
+        out = os.path.join(self.root, "report.html")
+        self.assertEqual(main(["--html", out, self.root]), 0)
+        with open(out, encoding="utf-8") as fh:
+            self.assertIn("<!doctype html", fh.read().lower())
 
 
 if __name__ == "__main__":

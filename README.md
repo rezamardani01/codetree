@@ -66,7 +66,7 @@ codetree-gui              # same, without a console window on Windows
 | **Click a language** | Lights up all leaves written in it |
 | **Click a file in "Largest files"** | Flies the camera to that leaf |
 | **Expand all · Collapse · Fit view** | Overview controls |
-| **Theme · Export** | Dark/light theme, export JSON / CSV / Markdown |
+| **Theme · Export** | Dark/light theme, export JSON / CSV / Markdown / standalone HTML |
 
 Shortcuts: `F5` rescan · `Ctrl+O` browse · `Ctrl+F` search · `Ctrl+E` export JSON · `Esc` clear search.
 
@@ -85,12 +85,14 @@ codetree --cli --top 10                 # also list the 10 largest files
 codetree -e py -e js -i "*.min.js"      # only these extensions, ignore a pattern
 codetree --json report.json             # write reports (use - for stdout)
 codetree --csv report.csv --md report.md
+codetree --html report.html             # standalone interactive HTML report
 ```
 
 | Option | Description |
 |---|---|
 | `--cli` | Print to the terminal instead of opening the GUI |
 | `--json / --csv / --md FILE` | Export a report (implies `--cli`) |
+| `--html FILE` | Export a **standalone interactive HTML report** — summary cards, language donut, searchable collapsible tree. Single file, zero dependencies, opens in any browser, great for sharing or CI artifacts (implies `--cli`) |
 | `-i, --ignore PATTERN` | Glob to ignore, repeatable |
 | `-e, --ext EXT` | Only count these extensions, repeatable |
 | `--hidden` | Include hidden files and folders |

@@ -17,6 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 from . import __version__
 from .core import (DirNode, FileStat, ScanOptions, ScanResult, format_size, language_color, scan,
                    sorted_languages, to_csv, to_json, to_markdown)
+from .report import to_html
 
 THEMES = {
     "dark": dict(bg="#0a0e14", panel="#111720", card="#161d29", border="#243041", fg="#e6edf3",
@@ -195,7 +196,7 @@ class App:
         ttk.Button(head, text="◐ Theme", style="Ghost.TButton", command=self.toggle_theme).pack(side="right")
         self.btn_export = ttk.Menubutton(head, text="⭳ Export", style="Ghost.TMenubutton")
         self.export_menu = tk.Menu(self.btn_export, tearoff=0)
-        for label, kind in (("JSON…", "json"), ("CSV…", "csv"), ("Markdown…", "md")):
+        for label, kind in (("JSON…", "json"), ("CSV…", "csv"), ("Markdown…", "md"), ("HTML report…", "html")):
             self.export_menu.add_command(label=label, command=lambda k=kind: self.export(k))
         self.btn_export["menu"] = self.export_menu
         self.btn_export.pack(side="right", padx=8)
@@ -1267,8 +1268,8 @@ class App:
         if not self.result:
             messagebox.showinfo("CodeTree", "Run a scan first.")
             return
-        fn = {"json": to_json, "csv": to_csv, "md": to_markdown}[kind]
-        ext = {"json": ".json", "csv": ".csv", "md": ".md"}[kind]
+        fn = {"json": to_json, "csv": to_csv, "md": to_markdown, "html": to_html}[kind]
+        ext = {"json": ".json", "csv": ".csv", "md": ".md", "html": ".html"}[kind]
         path = filedialog.asksaveasfilename(defaultextension=ext, initialfile=f"codetree-report{ext}",
                                             filetypes=[(kind.upper(), f"*{ext}"), ("All files", "*.*")])
         if path:
