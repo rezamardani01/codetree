@@ -44,11 +44,20 @@ def mix(c1: str, c2: str, a: float) -> str:
 
 
 def _load_config() -> dict:
+    """Load ~/.codetree.json; fall back to defaults if it is corrupt."""
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
-            return json.load(fh)
+            cfg = json.load(fh)
     except (OSError, ValueError):
         return {}
+    if not isinstance(cfg, dict):
+        return {}
+    if not isinstance(cfg.get("recent"), list):
+        cfg["recent"] = []
+    cfg["recent"] = [p for p in cfg["recent"] if isinstance(p, str)]
+    if cfg.get("theme") not in THEMES:  # unknown theme names would KeyError later
+        cfg.pop("theme", None)
+    return cfg
 
 
 def _save_config(cfg: dict) -> None:
@@ -78,7 +87,7 @@ class VNode:
     """One animated node of the visual tree (folder, file or '+N more')."""
     __slots__ = ("key", "kind", "data", "name", "parent", "children", "depth", "x", "y", "tx", "ty", "g",
                  "delay", "dying", "expanded", "r", "ew", "total", "lang", "e", "gl", "o", "t", "b",
-                 "cstate", "lab_vis", "shown", "bcount", "anc", "ewc")
+                 "cstate", "lab_vis", "shown", "bcount", "anc", "ewc", "tname")
 
     def __init__(self, key, kind):
         self.key, self.kind = key, kind
@@ -98,6 +107,7 @@ class VNode:
         self.bcount = 0
         self.anc = None
         self.ewc = None
+        self.tname = None
 
 
 class App:
@@ -285,8 +295,8 @@ class App:
         r.bind("<F5>", lambda e: self.start_scan())
         r.bind("<Control-o>", lambda e: self.browse())
         r.bind("<Control-f>", lambda e: (self.search.focus_set(), self.search.select_range(0, "end")))
-        r.bind("<Control-e>", lambda e: self.export("json"))
         r.bind("<Escape>", lambda e: (self.var_search.set(""), self.select(None)))
+        cv.bind("<Control-e>", lambda e: self.export("json"))  # canvas only: keep Ctrl+E usable in text fields
         self.path_box.bind("<Return>", lambda e: self.start_scan())
         self.path_box.bind("<<ComboboxSelected>>", lambda e: self.start_scan())
         self.var_search.trace_add("write", lambda *a: self.on_search())
@@ -300,6 +310,10 @@ class App:
         cv.bind("<MouseWheel>", lambda e: self.zoom_at(e.x, e.y, 1.12 if e.delta > 0 else 1 / 1.12))
         cv.bind("<Button-4>", lambda e: self.zoom_at(e.x, e.y, 1.12))
         cv.bind("<Button-5>", lambda e: self.zoom_at(e.x, e.y, 1 / 1.12))
+        for panel in (self.cv_lang, self.cv_top):  # the side-panel lists have no scrollbars
+            panel.bind("<MouseWheel>", lambda e, w=panel: w.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+            panel.bind("<Button-4>", lambda e, w=panel: w.yview_scroll(-2, "units"))
+            panel.bind("<Button-5>", lambda e, w=panel: w.yview_scroll(2, "units"))
         self.ctx = tk.Menu(self.root, tearoff=0)
         self.ctx.add_command(label="Open", command=lambda: self.ctx_act("open"))
         self.ctx.add_command(label="Show in folder", command=lambda: self.ctx_act("reveal"))
@@ -645,8 +659,8 @@ class App:
             return
         self.grow_token += 1
         self.expanded = {self.result.root.path}
-        frontier, count = [self.result.root], 0
-        count = self.visible_count_estimate([self.result.root]) - len([n for n in self.vnodes.values() if not n.dying])
+        frontier = [self.result.root]
+        count = self.visible_count_estimate([self.result.root]) - len(self.live_nodes())
         while frontier and count < EXPAND_ALL_CAP:
             nxt = []
             for d in sorted((c for p in frontier for c in p.dirs), key=lambda c: -c.total):
@@ -933,6 +947,7 @@ class App:
                              font=self.font(self.cur_fs, n.kind == "dir"), tags="text")
         n.b = cv.create_text(0, 0, text="", font=self.font(max(7, self.cur_fs - 2), True), tags="text")
         n.cstate = None
+        n.tname = n.name
 
     def node_colors(self, n: VNode):
         t = self.t
@@ -986,6 +1001,9 @@ class App:
             if n.o is None:
                 self.make_items(n)
                 created = True
+            if n.tname != n.name:  # e.g. the "+N more files" counter after a rescan
+                cv.itemconfigure(n.t, text=n.name)
+                n.tname = n.name
             px, py = n.x * s + ox, n.y * s + oy
             p = n.parent
             qx, qy = (p.x * s + ox, p.y * s + oy) if p else (px, py)
