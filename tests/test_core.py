@@ -5,6 +5,7 @@ import unittest
 
 from codetree.cli import main
 from codetree.core import ScanOptions, classify_lines, detect_language, format_size, scan, to_csv, to_json
+from codetree.report import to_html
 
 
 def write(root, rel, text="", mode="w"):
@@ -111,6 +112,28 @@ class ScanTests(unittest.TestCase):
         r = scan(self.root)
         self.assertEqual(json.loads(to_json(r))["summary"]["files"], 3)
         self.assertEqual(len(to_csv(r).strip().splitlines()), 4)
+
+    def test_html_report(self):
+        h = to_html(scan(self.root))
+        low = h.lower()
+        self.assertIn("<!doctype html", low)
+        self.assertIn("</html>", low)
+        self.assertIn("a.py", h)          # tree entry
+        self.assertIn("Python", h)        # language legend
+        self.assertIn("largest files", low)
+        self.assertIn('id="filter"', h)   # search box
+        self.assertIn('id="tree"', h)
+
+    def test_html_report_escapes_names(self):
+        write(self.root, "weird<&>.py", "x = 1\n")
+        h = to_html(scan(self.root))
+        self.assertIn("weird&lt;&amp;&gt;.py", h)
+        self.assertNotIn("weird<&>", h)
+
+    def test_html_report_empty_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            h = to_html(scan(d))
+            self.assertIn("No files counted", h)
 
     def test_cancel(self):
         self.assertTrue(scan(self.root, cancel=lambda: True).cancelled)
