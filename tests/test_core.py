@@ -140,11 +140,25 @@ class ScanTests(unittest.TestCase):
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        write(self.root, "a.py", "x = 1\n")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
     def test_negative_options_rejected(self):
         for flag in ("--top", "--depth", "--max-size"):
             with self.assertRaises(SystemExit, msg=flag) as cm:
                 main([flag, "-1", "."])
             self.assertEqual(cm.exception.code, 2)
+
+    def test_html_export(self):
+        out = os.path.join(self.root, "report.html")
+        self.assertEqual(main(["--html", out, self.root]), 0)
+        with open(out, encoding="utf-8") as fh:
+            self.assertIn("<!doctype html", fh.read().lower())
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import sys
 from . import __version__
 from .core import (DirNode, ScanOptions, ScanResult, format_size, scan, sorted_languages,
                    to_csv, to_json, to_markdown)
+from .report import to_html
 
 SORT_KEYS = {
     "name": lambda n: n.name.lower(),
@@ -80,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", metavar="FILE", help="write a JSON report ('-' for stdout); implies --cli")
     p.add_argument("--csv", metavar="FILE", help="write a CSV report ('-' for stdout); implies --cli")
     p.add_argument("--md", metavar="FILE", help="write a Markdown report ('-' for stdout); implies --cli")
+    p.add_argument("--html", metavar="FILE", help="write a standalone interactive HTML report ('-' for stdout); implies --cli")
     p.add_argument("-i", "--ignore", action="append", default=[], metavar="PATTERN",
                    help="glob pattern to ignore (repeatable), e.g. -i '*.min.js' -i tests")
     p.add_argument("-e", "--ext", action="append", default=[], metavar="EXT",
@@ -128,7 +130,7 @@ def main(argv=None) -> int:
         max_size=int(args.max_size * 1024 * 1024),
     )
 
-    exports = [(args.json, to_json), (args.csv, to_csv), (args.md, to_markdown)]
+    exports = [(args.json, to_json), (args.csv, to_csv), (args.md, to_markdown), (args.html, to_html)]
     wants_cli = args.cli or any(t for t, _ in exports)
 
     if not wants_cli:
