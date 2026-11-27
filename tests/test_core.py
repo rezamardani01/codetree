@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from codetree.core import ScanOptions, classify_lines, detect_language, scan, to_csv, to_json
+from codetree.core import ScanOptions, classify_lines, detect_language, format_size, scan, to_csv, to_json
 
 
 def write(root, rel, text="", mode="w"):
@@ -25,7 +25,15 @@ class ClassifyTests(unittest.TestCase):
     def test_language(self):
         self.assertEqual(detect_language("a.PY"), "Python")
         self.assertEqual(detect_language("Dockerfile"), "Dockerfile")
+        self.assertEqual(detect_language("dockerfile.prod"), "Dockerfile")
+        self.assertEqual(detect_language("Dockerfile.dev"), "Dockerfile")
         self.assertEqual(detect_language("x.unknown"), "Other")
+
+    def test_format_size(self):
+        self.assertEqual(format_size(0), "0 B")
+        self.assertEqual(format_size(1023), "1023 B")
+        self.assertEqual(format_size(1024), "1.0 KB")
+        self.assertEqual(format_size(5 * 1024 * 1024), "5.0 MB")
 
 
 class ScanTests(unittest.TestCase):
@@ -68,6 +76,11 @@ class ScanTests(unittest.TestCase):
     def test_gitignore(self):
         write(self.root, ".gitignore", "*.js\n")
         self.assertEqual(scan(self.root).total_files, 2)
+
+    def test_bom_first_line(self):
+        write(self.root, "bom.py", "\ufeff# comment\nx = 1\n")
+        names = {f.name: (f.code, f.comment) for f in scan(self.root).files}
+        self.assertEqual(names["bom.py"], (1, 1))
 
     def test_exports(self):
         r = scan(self.root)

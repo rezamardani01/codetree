@@ -80,6 +80,8 @@ def detect_language(filename: str) -> str:
     low = filename.lower()
     if low in _FILENAMES:
         return _FILENAMES[low]
+    if low.startswith("dockerfile"):  # Dockerfile.dev, Dockerfile.prod, ...
+        return "Dockerfile"
     ext = os.path.splitext(low)[1]
     return EXT_TO_LANG.get(ext, "Other")
 
@@ -227,7 +229,9 @@ def analyze_file(path: str) -> Optional[FileStat]:
     name = os.path.basename(path)
     lang = detect_language(name)
     lc, bc, _ = LANG_SPECS[lang]
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    # utf-8-sig transparently strips a BOM; without it the BOM character glues
+    # itself to the first token and a leading comment on line 1 counts as code.
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
         code, comment, blank = classify_lines(fh, tuple(lc), bc)
     return FileStat(path, name, lang, code, comment, blank, os.path.getsize(path))
 
@@ -284,7 +288,8 @@ def scan(path: str, options: Optional[ScanOptions] = None,
             result.cancelled = True
             return
         try:
-            entries = sorted(os.scandir(node.path), key=lambda e: e.name.lower())
+            with os.scandir(node.path) as it:  # context manager: close the dir handle promptly
+                entries = sorted(it, key=lambda e: e.name.lower())
         except OSError as e:
             result.errors.append(f"{node.path}: {e.strerror or e}")
             return
