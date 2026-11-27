@@ -118,7 +118,7 @@ for lang in result.languages.values():
 
 - Hidden files and folders are skipped (enable with `--hidden` / the *Hidden files* checkbox).
 - `node_modules`, `venv`, `__pycache__`, `dist`, `build`, `.git`, lock files and similar noise are skipped by default.
-- Patterns in the project's root `.gitignore` are respected.
+- Patterns in `.gitignore` files — in the project root and in subfolders — are respected, including `!` negations.
 - Binary files and files over 5 MB are skipped; everything else is read as UTF‑8 with a lenient fallback.
 
 ## Development

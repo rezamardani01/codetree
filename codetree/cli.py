@@ -106,7 +106,14 @@ def _emit(target: str, text: str) -> None:
 
 
 def main(argv=None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.depth < 0:
+        parser.error("--depth must be >= 0")
+    if args.top < 0:
+        parser.error("--top must be >= 0")
+    if args.max_size < 0:
+        parser.error("--max-size must be >= 0")
     path = os.path.abspath(args.path)
     if not os.path.isdir(path):
         print(f"codetree: '{args.path}' is not a directory.", file=sys.stderr)

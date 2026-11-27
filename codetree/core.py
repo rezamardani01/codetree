@@ -80,6 +80,8 @@ def detect_language(filename: str) -> str:
     low = filename.lower()
     if low in _FILENAMES:
         return _FILENAMES[low]
+    if low.startswith("dockerfile"):  # Dockerfile.dev, Dockerfile.prod, ...
+        return "Dockerfile"
     ext = os.path.splitext(low)[1]
     return EXT_TO_LANG.get(ext, "Other")
 
@@ -227,22 +229,58 @@ def analyze_file(path: str) -> Optional[FileStat]:
     name = os.path.basename(path)
     lang = detect_language(name)
     lc, bc, _ = LANG_SPECS[lang]
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+    # utf-8-sig transparently strips a BOM; without it the BOM character glues
+    # itself to the first token and a leading comment on line 1 counts as code.
+    with open(path, "r", encoding="utf-8-sig", errors="replace") as fh:
         code, comment, blank = classify_lines(fh, tuple(lc), bc)
     return FileStat(path, name, lang, code, comment, blank, os.path.getsize(path))
 
 
-def _load_gitignore(directory: str) -> List[str]:
+def _load_gitignore(directory: str) -> List[Tuple[str, bool]]:
+    """Parse one ``.gitignore`` into ordered ``(pattern, negated)`` pairs."""
     patterns = []
     try:
-        with open(os.path.join(directory, ".gitignore"), "r", encoding="utf-8", errors="replace") as fh:
+        with open(os.path.join(directory, ".gitignore"), "r", encoding="utf-8-sig",
+                  errors="replace") as fh:
             for line in fh:
                 line = line.strip()
-                if line and not line.startswith(("#", "!")):
-                    patterns.append(line.rstrip("/").lstrip("/"))
+                if not line or line.startswith("#"):
+                    continue
+                negated = line.startswith("!")
+                if negated:
+                    line = line[1:].strip()
+                    if not line:
+                        continue
+                patterns.append((line.rstrip("/"), negated))
     except OSError:
         pass
     return patterns
+
+
+def _gitignore_match(name: str, rel: str, stack) -> bool:
+    """Gitignore decision for one entry; the last matching pattern wins.
+
+    ``stack`` holds ``(dir_prefix, patterns)`` pairs ordered from the project
+    root down to the current directory, so patterns from deeper ``.gitignore``
+    files take precedence, and a ``!`` pattern can re-include a file.
+    ``rel`` is the entry path relative to the project root with ``/`` separators.
+    """
+    ignored = False
+    for prefix, patterns in stack:
+        if prefix:
+            if not rel.startswith(prefix):
+                continue
+            sub = rel[len(prefix):]
+        else:
+            sub = rel
+        for pat, negated in patterns:
+            if "/" in pat:  # anchored to the directory holding the .gitignore
+                if fnmatch.fnmatch(sub, pat.lstrip("/")) or \
+                        (pat.startswith("**/") and fnmatch.fnmatch(name, pat[3:])):
+                    ignored = not negated
+            elif fnmatch.fnmatch(name, pat):  # unanchored: matches at any depth
+                ignored = not negated
+    return ignored
 
 
 def scan(path: str, options: Optional[ScanOptions] = None,
@@ -258,12 +296,13 @@ def scan(path: str, options: Optional[ScanOptions] = None,
     started = time.perf_counter()
     exts = {e.lower() if e.startswith(".") else "." + e.lower() for e in opts.extensions}
     user_ignore = list(opts.ignore)
-    git_patterns = _load_gitignore(root_path) if opts.respect_gitignore else []
+    git_root = _load_gitignore(root_path) if opts.respect_gitignore else []
+    git_stack = [("", git_root)] if git_root else []
 
     all_files: List[FileStat] = []
     result = ScanResult(DirNode(os.path.basename(root_path) or root_path, root_path), {}, all_files)
 
-    def ignored(name: str, rel: str, is_dir: bool) -> bool:
+    def ignored(name: str, rel: str, is_dir: bool, gi_stack) -> bool:
         if name.startswith(".") and not opts.include_hidden:
             return True
         if opts.use_default_ignores:
@@ -274,17 +313,18 @@ def scan(path: str, options: Optional[ScanOptions] = None,
         elif is_dir and name in (".git", ".hg", ".svn"):
             return True
         rel = rel.replace(os.sep, "/")
-        for pat in user_ignore + git_patterns:
+        for pat in user_ignore:
             if fnmatch.fnmatch(name, pat) or fnmatch.fnmatch(rel, pat):
                 return True
-        return False
+        return bool(gi_stack) and _gitignore_match(name, rel, gi_stack)
 
-    def walk(node: DirNode, rel_dir: str) -> None:
+    def walk(node: DirNode, rel_dir: str, gi_stack) -> None:
         if cancel and cancel():
             result.cancelled = True
             return
         try:
-            entries = sorted(os.scandir(node.path), key=lambda e: e.name.lower())
+            with os.scandir(node.path) as it:  # context manager: close the dir handle promptly
+                entries = sorted(it, key=lambda e: e.name.lower())
         except OSError as e:
             result.errors.append(f"{node.path}: {e.strerror or e}")
             return
@@ -297,12 +337,17 @@ def scan(path: str, options: Optional[ScanOptions] = None,
                 is_file = entry.is_file()
             except OSError:
                 continue
-            if not (is_dir or is_file) or ignored(entry.name, rel, is_dir):
+            if not (is_dir or is_file) or ignored(entry.name, rel, is_dir, gi_stack):
                 continue
             if is_dir:
+                child_stack = gi_stack
+                if opts.respect_gitignore:
+                    child_patterns = _load_gitignore(entry.path)
+                    if child_patterns:
+                        child_stack = gi_stack + [(rel.replace(os.sep, "/") + "/", child_patterns)]
                 child = DirNode(entry.name, entry.path)
                 node.dirs.append(child)
-                walk(child, rel)
+                walk(child, rel, child_stack)
                 continue
             if exts and os.path.splitext(entry.name)[1].lower() not in exts:
                 continue
@@ -322,7 +367,7 @@ def scan(path: str, options: Optional[ScanOptions] = None,
             if progress:
                 progress(len(all_files), entry.path)
 
-    walk(result.root, "")
+    walk(result.root, "", git_stack)
     result.root.finalize()
 
     def count_dirs(n: DirNode) -> int:

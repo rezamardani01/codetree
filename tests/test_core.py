@@ -3,7 +3,8 @@ import os
 import tempfile
 import unittest
 
-from codetree.core import ScanOptions, classify_lines, detect_language, scan, to_csv, to_json
+from codetree.cli import main
+from codetree.core import ScanOptions, classify_lines, detect_language, format_size, scan, to_csv, to_json
 
 
 def write(root, rel, text="", mode="w"):
@@ -25,7 +26,15 @@ class ClassifyTests(unittest.TestCase):
     def test_language(self):
         self.assertEqual(detect_language("a.PY"), "Python")
         self.assertEqual(detect_language("Dockerfile"), "Dockerfile")
+        self.assertEqual(detect_language("dockerfile.prod"), "Dockerfile")
+        self.assertEqual(detect_language("Dockerfile.dev"), "Dockerfile")
         self.assertEqual(detect_language("x.unknown"), "Other")
+
+    def test_format_size(self):
+        self.assertEqual(format_size(0), "0 B")
+        self.assertEqual(format_size(1023), "1023 B")
+        self.assertEqual(format_size(1024), "1.0 KB")
+        self.assertEqual(format_size(5 * 1024 * 1024), "5.0 MB")
 
 
 class ScanTests(unittest.TestCase):
@@ -69,6 +78,35 @@ class ScanTests(unittest.TestCase):
         write(self.root, ".gitignore", "*.js\n")
         self.assertEqual(scan(self.root).total_files, 2)
 
+    def test_gitignore_negation(self):
+        write(self.root, ".gitignore", "*.log\n!keep.log\n")
+        write(self.root, "drop.log", "x\n")
+        write(self.root, "keep.log", "x\n")
+        names = sorted(f.name for f in scan(self.root).files)
+        self.assertIn("keep.log", names)
+        self.assertNotIn("drop.log", names)
+
+    def test_nested_gitignore(self):
+        write(self.root, "sub/.gitignore", "tmp\n")
+        write(self.root, "sub/tmp/x.txt", "x\n")
+        write(self.root, "tmp/y.txt", "x\n")
+        names = sorted(f.name for f in scan(self.root).files)
+        self.assertIn("y.txt", names)      # the sub/.gitignore rule must not leak to the root
+        self.assertNotIn("x.txt", names)   # ...but it must apply inside sub/
+
+    def test_anchored_gitignore(self):
+        write(self.root, ".gitignore", "/logs\n")
+        write(self.root, "logs/a.txt", "x\n")
+        write(self.root, "sub/logs/b.txt", "x\n")
+        names = [f.name for f in scan(self.root).files]
+        self.assertNotIn("a.txt", names)  # '/logs' anchors to the project root only
+        self.assertIn("b.txt", names)     # ...so sub/logs must survive
+
+    def test_bom_first_line(self):
+        write(self.root, "bom.py", "\ufeff# comment\nx = 1\n")
+        names = {f.name: (f.code, f.comment) for f in scan(self.root).files}
+        self.assertEqual(names["bom.py"], (1, 1))
+
     def test_exports(self):
         r = scan(self.root)
         self.assertEqual(json.loads(to_json(r))["summary"]["files"], 3)
@@ -76,6 +114,14 @@ class ScanTests(unittest.TestCase):
 
     def test_cancel(self):
         self.assertTrue(scan(self.root, cancel=lambda: True).cancelled)
+
+
+class CliTests(unittest.TestCase):
+    def test_negative_options_rejected(self):
+        for flag in ("--top", "--depth", "--max-size"):
+            with self.assertRaises(SystemExit, msg=flag) as cm:
+                main([flag, "-1", "."])
+            self.assertEqual(cm.exception.code, 2)
 
 
 if __name__ == "__main__":
