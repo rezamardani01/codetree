@@ -3,6 +3,7 @@ import os
 import tempfile
 import unittest
 
+from codetree.cli import main
 from codetree.core import ScanOptions, classify_lines, detect_language, format_size, scan, to_csv, to_json
 
 
@@ -113,6 +114,14 @@ class ScanTests(unittest.TestCase):
 
     def test_cancel(self):
         self.assertTrue(scan(self.root, cancel=lambda: True).cancelled)
+
+
+class CliTests(unittest.TestCase):
+    def test_negative_options_rejected(self):
+        for flag in ("--top", "--depth", "--max-size"):
+            with self.assertRaises(SystemExit, msg=flag) as cm:
+                main([flag, "-1", "."])
+            self.assertEqual(cm.exception.code, 2)
 
 
 if __name__ == "__main__":
